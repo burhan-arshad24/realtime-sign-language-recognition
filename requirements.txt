@@ -1,6 +1,7 @@
 fastapi
 uvicorn[standard]
+python-multipart
 numpy
 opencv-python-headless
 joblib
-tensorflow-cpu
+tensorflow-cpu==2.20.0
