@@ -6,9 +6,8 @@ The project includes a trained TensorFlow/Keras model, a FastAPI backend, WebSoc
 
 ## Live Demo
 
-**Live Demo:** YOUR_LIVE_DEMO_URL
+**Live Demo:** https://realtime-sign-language-recognition-burhan.onrender.com/
 
-Replace `YOUR_LIVE_DEMO_URL` with the deployed application URL.
 
 ## Features
 
@@ -180,8 +179,7 @@ Sign Language Recognition/
 ### 1. Clone the Repository
 
 ```bash
-git clone YOUR_GITHUB_REPOSITORY_URL
-cd Sign-Language-Recognition
+git clone https://github.com/burhan-arshad24/realtime-sign-language-recognition
 ```
 
 ### 2. Create Virtual Environment
