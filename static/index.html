@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Sign Language Recognition</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+            background: #f5f5f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            width: 900px;
+            max-width: 95%;
+            text-align: center;
+        }
+
+        h1 {
+            margin-bottom: 30px;
+        }
+
+        .camera-container {
+            position: relative;
+            display: inline-block;
+            background: black;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        video {
+            width: 640px;
+            height: 480px;
+            display: block;
+            object-fit: cover;
+        }
+
+        .roi {
+            position: absolute;
+            width: 320px;
+            height: 320px;
+            left: 160px;
+            top: 80px;
+            border: 3px solid #00ff00;
+            pointer-events: none;
+        }
+
+        canvas {
+            display: none;
+        }
+
+        .result {
+            margin-top: 25px;
+            font-size: 30px;
+            font-weight: bold;
+        }
+
+        #prediction {
+            color: #007bff;
+        }
+
+        .confidence {
+            margin-top: 10px;
+            font-size: 20px;
+        }
+
+        .status {
+            margin-top: 15px;
+            font-size: 17px;
+        }
+
+        .error {
+            color: red;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+
+        <h1>Live Sign Language Recognition</h1>
+
+        <div class="camera-container">
+
+            <video
+                id="video"
+                autoplay
+                playsinline>
+            </video>
+
+            <div class="roi"></div>
+
+        </div>
+
+        <canvas
+            id="canvas"
+            width="320"
+            height="320">
+        </canvas>
+
+        <div class="result">
+            Prediction:
+            <span id="prediction">Waiting...</span>
+        </div>
+
+        <div class="confidence">
+            Confidence:
+            <span id="confidence">0%</span>
+        </div>
+
+        <div
+            class="status"
+            id="status">
+            Starting camera...
+        </div>
+
+    </div>
+
+    <script>
+
+        const video = document.getElementById("video");
+        const canvas = document.getElementById("canvas");
+
+        const predictionElement =
+            document.getElementById("prediction");
+
+        const confidenceElement =
+            document.getElementById("confidence");
+
+        const statusElement =
+            document.getElementById("status");
+
+        const ctx = canvas.getContext("2d");
+
+        let socket = null;
+        let predictionInterval = null;
+
+
+        async function startCamera() {
+
+            try {
+
+                const stream =
+                    await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            width: 640,
+                            height: 480
+                        },
+                        audio: false
+                    });
+
+                video.srcObject = stream;
+
+                statusElement.textContent =
+                    "Camera started";
+
+                connectWebSocket();
+
+            } catch (error) {
+
+                console.error(error);
+
+                statusElement.textContent =
+                    "Could not access camera";
+
+                statusElement.classList.add("error");
+            }
+        }
+
+
+        function connectWebSocket() {
+
+            socket = new WebSocket(
+                "ws://" + window.location.host + "/ws/predict"
+            );
+
+
+            socket.onopen = function () {
+
+                statusElement.textContent =
+                    "Connected to recognition server";
+
+                statusElement.classList.remove("error");
+
+                startPrediction();
+            };
+
+
+            socket.onmessage = function (event) {
+
+                const data =
+                    JSON.parse(event.data);
+
+                predictionElement.textContent =
+                    data.letter;
+
+                confidenceElement.textContent =
+                    (data.confidence * 100).toFixed(1) + "%";
+            };
+
+
+            socket.onerror = function (error) {
+
+                console.error(error);
+
+                statusElement.textContent =
+                    "WebSocket connection error";
+
+                statusElement.classList.add("error");
+            };
+
+
+            socket.onclose = function () {
+
+                statusElement.textContent =
+                    "WebSocket disconnected";
+
+                if (predictionInterval) {
+
+                    clearInterval(predictionInterval);
+
+                    predictionInterval = null;
+                }
+            };
+        }
+
+
+        function startPrediction() {
+
+            if (predictionInterval) {
+
+                clearInterval(predictionInterval);
+            }
+
+
+            predictionInterval = setInterval(function () {
+
+                if (
+                    !socket ||
+                    socket.readyState !== WebSocket.OPEN
+                ) {
+                    return;
+                }
+
+
+                if (
+                    video.readyState !==
+                    video.HAVE_ENOUGH_DATA
+                ) {
+                    return;
+                }
+
+
+                ctx.drawImage(
+                    video,
+                    160,
+                    80,
+                    320,
+                    320,
+                    0,
+                    0,
+                    320,
+                    320
+                );
+
+
+                const imageData =
+                    canvas.toDataURL(
+                        "image/jpeg",
+                        0.8
+                    );
+
+
+                socket.send(imageData);
+
+            }, 150);
+        }
+
+
+        startCamera();
+
+    </script>
+
+</body>
+
+</html>
