@@ -1,252 +1,230 @@
-<!DOCTYPE html>
-<html lang="en">
+<script>
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
 
-    <title>Sign Language Recognition</title>
+    const predictionElement =
+        document.getElementById("prediction");
 
-    <style>
-        * {
-            box-sizing: border-box;
-        }
+    const confidenceElement =
+        document.getElementById("confidence");
 
-        body {
-            margin: 0;
-            min-height: 100vh;
-            font-family: Arial, sans-serif;
-            background: #f5f5f5;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
+    const statusElement =
+        document.getElementById("status");
 
-        .container {
-            width: 900px;
-            max-width: 95%;
-            text-align: center;
-        }
+    const ctx = canvas.getContext("2d");
 
-        h1 {
-            margin-bottom: 30px;
-        }
-
-        .camera-container {
-            position: relative;
-            display: inline-block;
-            background: black;
-            border-radius: 12px;
-            overflow: hidden;
-        }
-
-        video {
-            width: 640px;
-            height: 480px;
-            display: block;
-            object-fit: cover;
-        }
-
-        .roi {
-            position: absolute;
-            width: 320px;
-            height: 320px;
-            left: 160px;
-            top: 80px;
-            border: 3px solid #00ff00;
-            pointer-events: none;
-        }
-
-        canvas {
-            display: none;
-        }
-
-        .result {
-            margin-top: 25px;
-            font-size: 30px;
-            font-weight: bold;
-        }
-
-        #prediction {
-            color: #007bff;
-        }
-
-        .confidence {
-            margin-top: 10px;
-            font-size: 20px;
-        }
-
-        .status {
-            margin-top: 15px;
-            font-size: 17px;
-        }
-
-        .error {
-            color: red;
-        }
-    </style>
-</head>
-
-<body>
-
-    <div class="container">
-
-        <h1>Live Sign Language Recognition</h1>
-
-        <div class="camera-container">
-
-            <video
-                id="video"
-                autoplay
-                playsinline>
-            </video>
-
-            <div class="roi"></div>
-
-        </div>
-
-        <canvas
-            id="canvas"
-            width="320"
-            height="320">
-        </canvas>
-
-        <div class="result">
-            Prediction:
-            <span id="prediction">Waiting...</span>
-        </div>
-
-        <div class="confidence">
-            Confidence:
-            <span id="confidence">0%</span>
-        </div>
-
-        <div
-            class="status"
-            id="status">
-            Starting camera...
-        </div>
-
-    </div>
-
-    <script>
-
-        const video = document.getElementById("video");
-        const canvas = document.getElementById("canvas");
-
-        const predictionElement =
-            document.getElementById("prediction");
-
-        const confidenceElement =
-            document.getElementById("confidence");
-
-        const statusElement =
-            document.getElementById("status");
-
-        const ctx = canvas.getContext("2d");
-
-        let socket = null;
-        let predictionInterval = null;
+    let socket = null;
+    let predictionInterval = null;
 
 
-        async function startCamera() {
+    async function startCamera() {
 
-            try {
+        try {
 
-                const stream =
-                    await navigator.mediaDevices.getUserMedia({
-                        video: {
-                            width: 640,
-                            height: 480
-                        },
-                        audio: false
-                    });
+            if (!navigator.mediaDevices ||
+                !navigator.mediaDevices.getUserMedia) {
 
-                video.srcObject = stream;
-
-                statusElement.textContent =
-                    "Camera started";
-
-                connectWebSocket();
-
-            } catch (error) {
-
-                console.error(error);
-
-                statusElement.textContent =
-                    "Could not access camera";
-
-                statusElement.classList.add("error");
+                throw new Error(
+                    "Camera API is not available. Make sure you are using HTTPS."
+                );
             }
+
+
+            const stream =
+                await navigator.mediaDevices.getUserMedia({
+
+                    video: {
+                        width: {
+                            ideal: 640
+                        },
+                        height: {
+                            ideal: 480
+                        }
+                    },
+
+                    audio: false
+                });
+
+
+            video.srcObject = stream;
+
+            statusElement.textContent =
+                "Camera started";
+
+            statusElement.classList.remove("error");
+
+            connectWebSocket();
+
         }
 
+        catch (error) {
 
-        function connectWebSocket() {
-
-            socket = new WebSocket(
-                "ws://" + window.location.host + "/ws/predict"
+            console.error(
+                "Camera error:",
+                error.name,
+                error.message
             );
 
 
-            socket.onopen = function () {
+            if (error.name === "NotAllowedError") {
 
                 statusElement.textContent =
-                    "Connected to recognition server";
+                    "Camera permission denied. Allow camera access in browser settings.";
 
-                statusElement.classList.remove("error");
+            }
 
-                startPrediction();
-            };
+            else if (error.name === "NotFoundError") {
+
+                statusElement.textContent =
+                    "No camera found.";
+
+            }
+
+            else if (error.name === "NotReadableError") {
+
+                statusElement.textContent =
+                    "Camera is already being used by another application.";
+
+            }
+
+            else if (error.name === "SecurityError") {
+
+                statusElement.textContent =
+                    "Camera blocked by browser security settings.";
+
+            }
+
+            else {
+
+                statusElement.textContent =
+                    "Could not access camera: " +
+                    error.message;
+            }
 
 
-            socket.onmessage = function (event) {
+            statusElement.classList.add("error");
+        }
+    }
+
+
+    function connectWebSocket() {
+
+        const protocol =
+            window.location.protocol === "https:"
+                ? "wss:"
+                : "ws:";
+
+
+        const wsUrl =
+            protocol +
+            "://" +
+            window.location.host +
+            "/ws/predict";
+
+
+        console.log(
+            "Connecting WebSocket:",
+            wsUrl
+        );
+
+
+        socket = new WebSocket(wsUrl);
+
+
+        socket.onopen = function () {
+
+            console.log(
+                "WebSocket connected"
+            );
+
+            statusElement.textContent =
+                "Connected to recognition server";
+
+            statusElement.classList.remove("error");
+
+            startPrediction();
+        };
+
+
+        socket.onmessage = function (event) {
+
+            try {
 
                 const data =
                     JSON.parse(event.data);
 
+
                 predictionElement.textContent =
                     data.letter;
 
+
                 confidenceElement.textContent =
-                    (data.confidence * 100).toFixed(1) + "%";
-            };
+                    (data.confidence * 100).toFixed(1) +
+                    "%";
+
+            }
+
+            catch (error) {
+
+                console.error(
+                    "Prediction parsing error:",
+                    error
+                );
+            }
+        };
 
 
-            socket.onerror = function (error) {
+        socket.onerror = function (error) {
 
-                console.error(error);
+            console.error(
+                "WebSocket error:",
+                error
+            );
 
-                statusElement.textContent =
-                    "WebSocket connection error";
+            statusElement.textContent =
+                "WebSocket connection error";
 
-                statusElement.classList.add("error");
-            };
-
-
-            socket.onclose = function () {
-
-                statusElement.textContent =
-                    "WebSocket disconnected";
-
-                if (predictionInterval) {
-
-                    clearInterval(predictionInterval);
-
-                    predictionInterval = null;
-                }
-            };
-        }
+            statusElement.classList.add("error");
+        };
 
 
-        function startPrediction() {
+        socket.onclose = function () {
+
+            console.log(
+                "WebSocket disconnected"
+            );
+
+            statusElement.textContent =
+                "WebSocket disconnected";
+
+            statusElement.classList.add("error");
+
 
             if (predictionInterval) {
 
-                clearInterval(predictionInterval);
+                clearInterval(
+                    predictionInterval
+                );
+
+                predictionInterval = null;
             }
+        };
+    }
 
 
-            predictionInterval = setInterval(function () {
+    function startPrediction() {
+
+        if (predictionInterval) {
+
+            clearInterval(
+                predictionInterval
+            );
+        }
+
+
+        predictionInterval =
+            setInterval(function () {
 
                 if (
                     !socket ||
@@ -265,11 +243,14 @@
 
 
                 ctx.drawImage(
+
                     video,
+
                     160,
                     80,
                     320,
                     320,
+
                     0,
                     0,
                     320,
@@ -287,13 +268,9 @@
                 socket.send(imageData);
 
             }, 150);
-        }
+    }
 
 
-        startCamera();
+    startCamera();
 
-    </script>
-
-</body>
-
-</html>
+</script>
