@@ -1,205 +1,407 @@
-<script>
+<!DOCTYPE html>
+<html lang="en">
 
-    const video = document.getElementById("video");
-    const canvas = document.getElementById("canvas");
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    const predictionElement =
-        document.getElementById("prediction");
+    <title>Live Sign Language Recognition</title>
 
-    const confidenceElement =
-        document.getElementById("confidence");
-
-    const statusElement =
-        document.getElementById("status");
-
-    const ctx = canvas.getContext("2d");
-
-    let socket = null;
-    let predictionInterval = null;
-
-
-    async function startCamera() {
-
-        try {
-
-            if (!navigator.mediaDevices ||
-                !navigator.mediaDevices.getUserMedia) {
-
-                throw new Error(
-                    "Camera API is not available. Make sure you are using HTTPS."
-                );
-            }
-
-
-            const stream =
-                await navigator.mediaDevices.getUserMedia({
-
-                    video: {
-                        width: {
-                            ideal: 640
-                        },
-                        height: {
-                            ideal: 480
-                        }
-                    },
-
-                    audio: false
-                });
-
-
-            video.srcObject = stream;
-
-            statusElement.textContent =
-                "Camera started";
-
-            statusElement.classList.remove("error");
-
-            connectWebSocket();
-
+    <style>
+        * {
+            box-sizing: border-box;
         }
 
-        catch (error) {
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+            background: #f5f5f5;
 
-            console.error(
-                "Camera error:",
-                error.name,
-                error.message
-            );
-
-
-            if (error.name === "NotAllowedError") {
-
-                statusElement.textContent =
-                    "Camera permission denied. Allow camera access in browser settings.";
-
-            }
-
-            else if (error.name === "NotFoundError") {
-
-                statusElement.textContent =
-                    "No camera found.";
-
-            }
-
-            else if (error.name === "NotReadableError") {
-
-                statusElement.textContent =
-                    "Camera is already being used by another application.";
-
-            }
-
-            else if (error.name === "SecurityError") {
-
-                statusElement.textContent =
-                    "Camera blocked by browser security settings.";
-
-            }
-
-            else {
-
-                statusElement.textContent =
-                    "Could not access camera: " +
-                    error.message;
-            }
-
-
-            statusElement.classList.add("error");
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
-    }
+
+        .container {
+            width: 900px;
+            max-width: 95%;
+            text-align: center;
+        }
+
+        h1 {
+            margin-bottom: 30px;
+        }
+
+        .camera-container {
+            position: relative;
+            display: inline-block;
+            background: black;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        video {
+            width: 640px;
+            height: 480px;
+            display: block;
+            object-fit: cover;
+        }
+
+        .roi {
+            position: absolute;
+
+            width: 320px;
+            height: 320px;
+
+            left: 160px;
+            top: 80px;
+
+            border: 3px solid #00ff00;
+
+            pointer-events: none;
+        }
+
+        canvas {
+            display: none;
+        }
+
+        .result {
+            margin-top: 25px;
+
+            font-size: 30px;
+            font-weight: bold;
+        }
+
+        #prediction {
+            color: #007bff;
+        }
+
+        .confidence {
+            margin-top: 10px;
+            font-size: 20px;
+        }
+
+        .status {
+            margin-top: 15px;
+            font-size: 17px;
+        }
+
+        .error {
+            color: red;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+
+        <h1>Live Sign Language Recognition</h1>
+
+        <div class="camera-container">
+
+            <video
+                id="video"
+                autoplay
+                playsinline>
+            </video>
+
+            <div class="roi"></div>
+
+        </div>
+
+        <canvas
+            id="canvas"
+            width="320"
+            height="320">
+        </canvas>
+
+        <div class="result">
+
+            Prediction:
+            <span id="prediction">
+                Waiting...
+            </span>
+
+        </div>
+
+        <div class="confidence">
+
+            Confidence:
+            <span id="confidence">
+                0%
+            </span>
+
+        </div>
+
+        <div
+            class="status"
+            id="status">
+
+            Starting camera...
+
+        </div>
+
+    </div>
 
 
-    function connectWebSocket() {
+    <script>
 
-        const protocol =
-            window.location.protocol === "https:"
-                ? "wss:"
-                : "ws:";
+        const video =
+            document.getElementById("video");
 
+        const canvas =
+            document.getElementById("canvas");
 
-        const wsUrl =
-            protocol +
-            "://" +
-            window.location.host +
-            "/ws/predict";
+        const predictionElement =
+            document.getElementById("prediction");
 
+        const confidenceElement =
+            document.getElementById("confidence");
 
-        console.log(
-            "Connecting WebSocket:",
-            wsUrl
-        );
+        const statusElement =
+            document.getElementById("status");
 
-
-        socket = new WebSocket(wsUrl);
+        const ctx =
+            canvas.getContext("2d");
 
 
-        socket.onopen = function () {
+        let socket = null;
 
-            console.log(
-                "WebSocket connected"
-            );
-
-            statusElement.textContent =
-                "Connected to recognition server";
-
-            statusElement.classList.remove("error");
-
-            startPrediction();
-        };
+        let predictionInterval = null;
 
 
-        socket.onmessage = function (event) {
+        async function startCamera() {
 
             try {
 
-                const data =
-                    JSON.parse(event.data);
+                if (
+                    !navigator.mediaDevices ||
+                    !navigator.mediaDevices.getUserMedia
+                ) {
+
+                    throw new Error(
+                        "Camera API is not available. Make sure you are using HTTPS."
+                    );
+
+                }
 
 
-                predictionElement.textContent =
-                    data.letter;
+                const stream =
+                    await navigator.mediaDevices.getUserMedia({
+
+                        video: {
+                            width: {
+                                ideal: 640
+                            },
+
+                            height: {
+                                ideal: 480
+                            }
+                        },
+
+                        audio: false
+
+                    });
 
 
-                confidenceElement.textContent =
-                    (data.confidence * 100).toFixed(1) +
-                    "%";
+                video.srcObject = stream;
+
+
+                statusElement.textContent =
+                    "Camera started";
+
+                statusElement.classList.remove("error");
+
+
+                connectWebSocket();
 
             }
 
             catch (error) {
 
                 console.error(
-                    "Prediction parsing error:",
-                    error
+                    "Camera error:",
+                    error.name,
+                    error.message
                 );
+
+
+                if (
+                    error.name === "NotAllowedError"
+                ) {
+
+                    statusElement.textContent =
+                        "Camera permission denied. Allow camera access.";
+
+                }
+
+                else if (
+                    error.name === "NotFoundError"
+                ) {
+
+                    statusElement.textContent =
+                        "No camera found.";
+
+                }
+
+                else if (
+                    error.name === "NotReadableError"
+                ) {
+
+                    statusElement.textContent =
+                        "Camera is already being used by another application.";
+
+                }
+
+                else {
+
+                    statusElement.textContent =
+                        "Could not access camera: " +
+                        error.message;
+
+                }
+
+
+                statusElement.classList.add("error");
+
             }
-        };
+
+        }
 
 
-        socket.onerror = function (error) {
+        function connectWebSocket() {
 
-            console.error(
-                "WebSocket error:",
-                error
-            );
-
-            statusElement.textContent =
-                "WebSocket connection error";
-
-            statusElement.classList.add("error");
-        };
+            const protocol =
+                window.location.protocol === "https:"
+                    ? "wss:"
+                    : "ws:";
 
 
-        socket.onclose = function () {
+            const wsUrl =
+                protocol +
+                "://" +
+                window.location.host +
+                "/ws/predict";
+
 
             console.log(
-                "WebSocket disconnected"
+                "Connecting WebSocket:",
+                wsUrl
             );
 
-            statusElement.textContent =
-                "WebSocket disconnected";
 
-            statusElement.classList.add("error");
+            socket =
+                new WebSocket(wsUrl);
 
+
+            socket.onopen =
+                function () {
+
+                    console.log(
+                        "WebSocket connected"
+                    );
+
+
+                    statusElement.textContent =
+                        "Connected to recognition server";
+
+                    statusElement.classList.remove(
+                        "error"
+                    );
+
+
+                    startPrediction();
+
+                };
+
+
+            socket.onmessage =
+                function (event) {
+
+                    try {
+
+                        const data =
+                            JSON.parse(
+                                event.data
+                            );
+
+
+                        predictionElement.textContent =
+                            data.letter;
+
+
+                        confidenceElement.textContent =
+                            (
+                                data.confidence * 100
+                            ).toFixed(1) + "%";
+
+                    }
+
+                    catch (error) {
+
+                        console.error(
+                            "Prediction parsing error:",
+                            error
+                        );
+
+                    }
+
+                };
+
+
+            socket.onerror =
+                function (error) {
+
+                    console.error(
+                        "WebSocket error:",
+                        error
+                    );
+
+
+                    statusElement.textContent =
+                        "WebSocket connection error";
+
+                    statusElement.classList.add(
+                        "error"
+                    );
+
+                };
+
+
+            socket.onclose =
+                function () {
+
+                    console.log(
+                        "WebSocket disconnected"
+                    );
+
+
+                    statusElement.textContent =
+                        "WebSocket disconnected";
+
+                    statusElement.classList.add(
+                        "error"
+                    );
+
+
+                    if (predictionInterval) {
+
+                        clearInterval(
+                            predictionInterval
+                        );
+
+                        predictionInterval = null;
+
+                    }
+
+                };
+
+        }
+
+
+        function startPrediction() {
 
             if (predictionInterval) {
 
@@ -207,70 +409,76 @@
                     predictionInterval
                 );
 
-                predictionInterval = null;
             }
-        };
-    }
 
 
-    function startPrediction() {
+            predictionInterval =
+                setInterval(
+                    function () {
 
-        if (predictionInterval) {
+                        if (
+                            !socket ||
+                            socket.readyState !==
+                            WebSocket.OPEN
+                        ) {
 
-            clearInterval(
-                predictionInterval
-            );
+                            return;
+
+                        }
+
+
+                        if (
+                            video.readyState !==
+                            video.HAVE_ENOUGH_DATA
+                        ) {
+
+                            return;
+
+                        }
+
+
+                        ctx.drawImage(
+
+                            video,
+
+                            160,
+                            80,
+
+                            320,
+                            320,
+
+                            0,
+                            0,
+
+                            320,
+                            320
+
+                        );
+
+
+                        const imageData =
+                            canvas.toDataURL(
+                                "image/jpeg",
+                                0.8
+                            );
+
+
+                        socket.send(
+                            imageData
+                        );
+
+
+                    },
+                    150
+                );
+
         }
 
 
-        predictionInterval =
-            setInterval(function () {
+        startCamera();
 
-                if (
-                    !socket ||
-                    socket.readyState !== WebSocket.OPEN
-                ) {
-                    return;
-                }
+    </script>
 
+</body>
 
-                if (
-                    video.readyState !==
-                    video.HAVE_ENOUGH_DATA
-                ) {
-                    return;
-                }
-
-
-                ctx.drawImage(
-
-                    video,
-
-                    160,
-                    80,
-                    320,
-                    320,
-
-                    0,
-                    0,
-                    320,
-                    320
-                );
-
-
-                const imageData =
-                    canvas.toDataURL(
-                        "image/jpeg",
-                        0.8
-                    );
-
-
-                socket.send(imageData);
-
-            }, 150);
-    }
-
-
-    startCamera();
-
-</script>
+</html>
