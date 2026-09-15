@@ -11,6 +11,9 @@ from tensorflow.keras.models import load_model
 
 app = FastAPI(title="Sign Language Recognition")
 
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
 model = load_model("sign_language_model.keras")
 class_names = joblib.load("sign_class_names.pkl")
@@ -21,6 +24,7 @@ app.mount(
     StaticFiles(directory="static"),
     name="static"
 )
+
 
 
 @app.get("/")
